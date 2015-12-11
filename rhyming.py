@@ -1,38 +1,10 @@
-from collections import defaultdict, Counter, namedtuple
+from collections import defaultdict, Counter
 import re
 import string
 import itertools
 import random
-
-def parse_words(file_in):
-    """Parse CMUdict into dictionary of (string, list of lists) items
-    Key: word
-    Value: [ [phonemes for pronounciation 0], [phonemes for pronounciation 1], ... ]"""
-    d_words = defaultdict(list)
-    with open(file_in) as f:
-        for line in f:
-            if line[:3] != ';;;':
-                split = line.strip().split()
-                word, phonemes = (split[0], split[1:])
-                if word[-1] == ')': # word is alternate pronounciation
-                    word = word[:-3]
-                d_words[word].append(phonemes)
-    return d_words
-
-
-def is_vowel(phoneme):
-    """Returns True if phoneme is a vowel sounds, else False"""
-    return phoneme[-1] in '012'
-
-
-#def n_syllables(word):
-    #"""Return number of syllables (based on # vowel sounds) in first pronounciation of word"""
-    #return len(phon for phon in d_words[word][0] if is_vowel(phon))
-
-
-def n_pronounciations(word):
-    """Returns number of specified pronouncations"""
-    return len(d_words[word])
+import sys
+import cPickle as pickle
 
 
 def rhymable_sound(phons, accum=[], stresses='12'):
@@ -48,33 +20,39 @@ def rhymable_sound(phons, accum=[], stresses='12'):
         return rhymable_sound(phons[:-1], accum = (phons[-1:] + accum), stresses=stresses)
 
 
-def find_all_rhymes():
-    """Returns dictionary of { 'rhymable sound': ['word1', 'word2', ...] }"""
-    d_rhymes = defaultdict(list)
-    #iter_rhymes = {k: [rhymabe_sound(v) for v in vs] for k,vs in d_words.iteritems()}
-    for k,vs in d_words.iteritems():
-        for v in vs:
-            d_rhymes[rhymable_sound(v)].append(k)
-    return { k: v for k,v in d_rhymes.iteritems() if len(v) > 1 }
+def is_vowel(phoneme):
+    """Returns True if phoneme is a vowel sounds, else False"""
+    return phoneme[-1] in '012'
+
+
+#def n_syllables(word):
+    #"""Return number of syllables (based on # vowel sounds) in first pronounciation of word"""
+    #return len(phon for phon in d_phonemes[word][0] if is_vowel(phon))
+
+
+def n_pronounciations(word):
+    """Returns number of specified pronouncations"""
+    return len(d_phonemes[word])
 
 
 def get_rhymes(word):
-    """Given word, returns list of rhyming word strings (or empty list)"""
+    """Given word, returns list of rhyming word strings (or empty list if DNE)"""
     try:
-        return [ rhyme for v in d_words[word] for rhyme in d_rhymes[rhymable_sound(v)] if rhyme != word ]
+        return [ rhyme for pronunciation in d_phonemes[word]
+                 for rhyme in d_rhymes[rhymable_sound(pronunciation)] if rhyme != word ]
     except(KeyError):
         return []
 
 
 def top_phonemes(word):
-    """Given word (string), returns list of phonemes in first pronunciation of word"""
+    """Given word (str), returns list of phonemes in primary pronunciation of word"""
     word = word.upper()
     # return original (as single elem of list) if not in dictionary
-    return d_words.get(word, [word])[0]
+    return d_phonemes.get(word, [word])[0]
 
 
 def do_rhyme(word1, word2):
-    """Given two word strings, returns bool True IFF words rhyme"""
+    """Given two word strings, returns True IFF words rhyme"""
     word1.upper()
     word2.upper()
     assert (word1 in get_rhymes(word2)) == (word2 in get_rhymes(word1))
@@ -85,15 +63,13 @@ def text2phons(text, sep=' '):
     return r'{s}\b{s}'.format(s=sep).join( sep.join(top_phonemes(word)) for word in text.split() )
 
 
-def text2poems(text, printable=True):
+def text2poems(text):
     l_words_only = text.translate(None,string.punctuation).upper().split()
     l_rhymable = [ rhymable_sound(top_phonemes(word)) for word in l_words_only ]
-    rhyme_text = ' '.join(l_rhymable)
     potential_rhymes = ( k for k,v in Counter(l_rhymable).iteritems() if v>1 )
-    #real_rhymes = []
-    Word = namedtuple('Word',['i','txt'])
 
     def partition(lst, idxs):
+        """Returns list of slices of original list along given indices"""
         idxs.sort()
         if idxs[0] == 0:
             idxs = idxs[1:]
@@ -103,25 +79,14 @@ def text2poems(text, printable=True):
         return [lst[i:j] for (i,j) in to_slice]
 
     poems = []
-
     for rhyme in potential_rhymes:
-        idxd_rhymes = [ Word(i, l_words_only[i]) for i,rhymable
-                        in enumerate(l_rhymable) if rhymable == rhyme ]
-        nonredundant_idxs = [ random.choice([x.i for x in grouped]) for _,grouped
-                              in itertools.groupby( sorted(idxd_rhymes), key=lambda(x): x.txt ) ]
+        idxd_rhymes = [ (i, l_words_only[i]) for i,rhymable in enumerate(l_rhymable) if rhymable == rhyme ]
+        # eliminate repeating words as rhymes by randomly sampling
+        nonredundant_idxs = [ random.choice([word[0] for word in grouped]) for _,grouped
+                              in itertools.groupby( sorted(idxd_rhymes), key=lambda x: x[1] ) ]
         if len(nonredundant_idxs) > 1:
             poem = partition(l_words_only, [i+1 for i in nonredundant_idxs])
             poems.append(poem)
-
-    # shorter length means fewer lines (i.e. less overflow to third line not incorporating rhyme)
-    poems.sort(key=len)
-
-    if printable:
-        for poem in poems:# set(poems):
-            print
-            print '\n'.join(' '.join(line) for line in poem)
-            print
-
     return poems
 
 
@@ -138,7 +103,7 @@ def n_syllables(text):
 def syllablesInWord(word):
     word = word.upper()
     try:
-        phonemes = d_words[word][0]
+        phonemes = d_phonemes[word][0]
         return len( [p for p in phonemes if is_vowel(p)] )
     except(IndexError, KeyError):
         # if word not in CMU dict, guess syllables based on # consecutive vowel groups
@@ -146,29 +111,33 @@ def syllablesInWord(word):
         return len( re.findall(r'[AEIOU]+', word) ) + (word[-1] == 'Y')
 
 
-def choose_poem(lst, printable=True):
+def choose_poem(lst):
     """Outputs poem with best syllables from list of potential poems"""
+    def syllable_difference(a,b):
+        return abs(n_syllables(a) - n_syllables(b))
+    def metric(lines):
+        # lower metric means fewer lines (overflow) & closer meter between lines
+        return len(lines) + syllable_difference(lines[0], lines[1])
+
     if len(lst) == 1:
-        best = lst[0]
+        best_idx = 0
     else:
-        def syllable_difference(a,b):
-            return abs(n_syllables(a) - n_syllables(b))
-        def metric(lines):
-            return len(lines) + syllable_difference(lines[0], lines[1])
         metrics = [ (i, metric(lines)) for i,lines in enumerate(lst) ]
-        metrics.sort(key=lambda x: x[1])
-        best = lst[metrics[0][0]]
+        #metrics.sort(key=lambda x: x[1])
+        #best = lst[metrics[0][0]]
+        best_idx = min(metrics, key=lambda x: x[1])[0]
 
-    if printable:
-        print
-        print '\n'.join(' '.join(line) for line in best)
-        print
+    return lst[best_idx]
 
-    return best
+
+def print_poem(lines):
+    print
+    print '\n'.join(' '.join(line) for line in lines)
+    print
 
 
 #def text2poem_regex(text, sep=' '):
-    ##text = ('|').join(rhymable_sound(phons) for phons in d_words[word] for word in text.split())
+    ##text = ('|').join(rhymable_sound(phons) for phons in d_phonemes[word] for word in text.split())
     #l_words_only = text.translate(None,string.punctuation).upper().split()
     #rhyme_text = sep.join( rhymable_sound(top_phonemes(word)) for word in l_words_only )
 #
@@ -204,19 +173,24 @@ def choose_poem(lst, printable=True):
         #print
 
 
-def populate_dicts(filepath):
-    global d_words
+def populate_dicts(phonemes_in='./dict_phonemes.pickled',
+                   rhymes_in='./dict_rhymes.pickled'):
+    global d_phonemes
     global d_rhymes
-    d_words = parse_words(filepath)
-    d_rhymes = find_all_rhymes()
+    with open(phonemes_in, 'r') as f:
+        d_phonemes = pickle.load(f)
+    with open(rhymes_in, 'r') as f:
+        d_rhymes = pickle.load(f)
 
 
-INFILE = './cmudict-0.7b'
 TEXT = 'rihanna is going to a movie. tis the season to be groovy.'
 
 if __name__ == "__main__":
-    populate_dicts(INFILE)
+    TEXT = sys.argv[1]
+    PHONEME_DICT = './dict_phonemes.pickled'
+    RHYMING_DICT = './dict_rhymes.pickled'
+    populate_dicts(PHONEME_DICT, RHYMING_DICT)
     #import code; code.interact(local=locals())
-    poems = text2poems(TEXT, printable=False)
-    choose_poem(poems)
+    poems = text2poems(TEXT)
+    print_poem( choose_poem(poems) )
     #import code; code.interact(local=locals())
