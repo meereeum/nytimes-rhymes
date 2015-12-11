@@ -90,16 +90,29 @@ def text2poems(text, print_rhymable=False, print_rhymes=False, stress_matters=Tr
         return [lst[i:j] for (i,j) in to_slice]
 
     poems = []
+
+    if not potential_rhymes:
+        poems.append([l_words_only])
+        return poems
+
     for rhyme in potential_rhymes:
         idxd_rhymes = [ (i, l_words_only[i]) for i,rhymable in enumerate(l_rhymable)
                         if rhymable == rhyme ]
         # eliminate repeating words as rhymes by randomly sampling
-        nonredundant_idxs = [ random.choice([word[0] for word in grouped])
+        #nonredundant_idxs = [ random.choice([word[0] for word in grouped])
+                              #for _,grouped in itertools.groupby(
+                                      #sorted(idxd_rhymes), key=lambda x: x[1]) ]
+        # group rhymable words by word to prevent self-rhyming
+        nonredundant_idxs = [ [word[0] for word in grouped]
                               for _,grouped in itertools.groupby(
                                       sorted(idxd_rhymes), key=lambda x: x[1]) ]
+        all_combos = itertools.product(*nonredundant_idxs)
+
         if len(nonredundant_idxs) > 1:
-            poem = partition(l_words_only, [i+1 for i in nonredundant_idxs])
-            poems.append(poem)
+            for combo in all_combos:
+                poem = partition(l_words_only, [i+1 for i in combo])
+                poems.append(poem)
+
     return poems
 
 
@@ -211,6 +224,9 @@ if __name__ == "__main__":
         print_poem(p)
 
     print '\nBEST!!!~~~~!!!!*****! ......'
-
     print_poem( choose_poem(poems) )
+
+    #poem = choose_poem(poems)
+    #print_poem(poem[])
+
     #import code; code.interact(local=locals())
