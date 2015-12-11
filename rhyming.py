@@ -9,6 +9,8 @@ import cPickle as pickle
 
 def rhymable_sound(phons, accum=[], stresses='12'):
     """Returns string of rhymable word segment (starting with rightmost vowel phoneme with stress in stresses, if exists) - if no vowel sounds, returns original"""
+    if len(phons) == 1 and not accum:
+        return phons[0]
     if not phons:
         if stresses=='12':
             return rhymable_sound(accum, stresses='0')
@@ -48,7 +50,7 @@ def top_phonemes(word):
     """Given word (str), returns list of phonemes in primary pronunciation of word"""
     word = word.upper()
     # return original (as single elem of list) if not in dictionary
-    return d_phonemes.get(word, [word])[0]
+    return d_phonemes.get(word, [[word]])[0]
 
 
 def do_rhyme(word1, word2):
@@ -59,14 +61,23 @@ def do_rhyme(word1, word2):
     return word1 in get_rhymes(word2)
 
 
-def text2phons(text, sep=' '):
-    return r'{s}\b{s}'.format(s=sep).join( sep.join(top_phonemes(word)) for word in text.split() )
+#def text2phons(text, sep=' '):
+    #return r'{s}\b{s}'.format(s=sep).join( sep.join(top_phonemes(word)) for word in text.split() )
 
 
-def text2poems(text):
+def text2poems(text, print_rhymable=False, print_rhymes=False, stress_matters=True):
     l_words_only = text.translate(None,string.punctuation).upper().split()
-    l_rhymable = [ rhymable_sound(top_phonemes(word)) for word in l_words_only ]
-    potential_rhymes = ( k for k,v in Counter(l_rhymable).iteritems() if v>1 )
+    if stress_matters:
+        l_rhymable = [ rhymable_sound(top_phonemes(word)) for word in l_words_only ]
+    else:
+        l_rhymable = [ ''.join(char for char in rhymable_sound(top_phonemes(word))
+                               if char not in '012') for word in l_words_only ]
+    potential_rhymes = [ k for k,v in Counter(l_rhymable).iteritems() if v>1 ]
+
+    if print_rhymable:
+        print '\nrhymables: {}\n'.format(l_rhymable)
+    if print_rhymes:
+        print '\nrhymes (?): {}\n'.format(potential_rhymes)
 
     def partition(lst, idxs):
         """Returns list of slices of original list along given indices"""
@@ -80,10 +91,12 @@ def text2poems(text):
 
     poems = []
     for rhyme in potential_rhymes:
-        idxd_rhymes = [ (i, l_words_only[i]) for i,rhymable in enumerate(l_rhymable) if rhymable == rhyme ]
+        idxd_rhymes = [ (i, l_words_only[i]) for i,rhymable in enumerate(l_rhymable)
+                        if rhymable == rhyme ]
         # eliminate repeating words as rhymes by randomly sampling
-        nonredundant_idxs = [ random.choice([word[0] for word in grouped]) for _,grouped
-                              in itertools.groupby( sorted(idxd_rhymes), key=lambda x: x[1] ) ]
+        nonredundant_idxs = [ random.choice([word[0] for word in grouped])
+                              for _,grouped in itertools.groupby(
+                                      sorted(idxd_rhymes), key=lambda x: x[1]) ]
         if len(nonredundant_idxs) > 1:
             poem = partition(l_words_only, [i+1 for i in nonredundant_idxs])
             poems.append(poem)
@@ -184,6 +197,7 @@ def populate_dicts(phonemes_in='./dict_phonemes.pickled',
 
 
 TEXT = 'rihanna is going to a movie. tis the season to be groovy.'
+# USAGE: $ cat scratch.txt | tr '\n' ' ' | sed -e's/^/"/' -e's/$/"/' | xargs python rhyming.py | gsed -re 's/([^^])$/\1!/' | say -v Vicki
 
 if __name__ == "__main__":
     TEXT = sys.argv[1]
@@ -191,6 +205,12 @@ if __name__ == "__main__":
     RHYMING_DICT = './dict_rhymes.pickled'
     populate_dicts(PHONEME_DICT, RHYMING_DICT)
     #import code; code.interact(local=locals())
-    poems = text2poems(TEXT)
+    poems = text2poems(TEXT, stress_matters=False)#, print_rhymable=True, print_rhymes=True)
+
+    for p in poems:
+        print_poem(p)
+
+    print '\nBEST!!!~~~~!!!!*****! ......'
+
     print_poem( choose_poem(poems) )
     #import code; code.interact(local=locals())
