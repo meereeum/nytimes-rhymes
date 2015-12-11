@@ -65,55 +65,87 @@ def do_rhyme(word1, word2):
     #return r'{s}\b{s}'.format(s=sep).join( sep.join(top_phonemes(word)) for word in text.split() )
 
 
-def text2poems(text, print_rhymable=False, print_rhymes=False, stress_matters=True):
-    l_words_only = text.translate(None,string.punctuation).upper().split()
-    if stress_matters:
-        l_rhymable = [ rhymable_sound(top_phonemes(word)) for word in l_words_only ]
-    else:
-        l_rhymable = [ ''.join(char for char in rhymable_sound(top_phonemes(word))
-                               if char not in '012') for word in l_words_only ]
-    potential_rhymes = [ k for k,v in Counter(l_rhymable).iteritems() if v>1 ]
+class Poem():
+    def __init__(self, text, print_rhymable=False, print_rhymes=False,
+                 stress_matters=True, print_individual=False, print_combined=True):
+        self.print_individual = print_individual
+        self.print_combined = print_combined
+        self.l_words_only = text.translate(None,string.punctuation).upper().split()
 
-    if print_rhymable:
-        print '\nrhymables: {}\n'.format(l_rhymable)
-    if print_rhymes:
-        print '\nrhymes (?): {}\n'.format(potential_rhymes)
+        if stress_matters:
+            self.l_rhymable = [ rhymable_sound(top_phonemes(word))
+                                for word in self.l_words_only ]
+        else:
+            self.l_rhymable = [ ''.join(char for char in rhymable_sound(top_phonemes(word))
+                                if char not in '012') for word in self.l_words_only ]
 
-    def partition(lst, idxs):
-        """Returns list of slices of original list along given indices"""
+        self.potential_rhymes = [ k for k,v in Counter(self.l_rhymable).iteritems() if v>1 ]
+
+        if print_rhymable:
+            print '\nrhymables: {}\n'.format(l_rhymable)
+        if print_rhymes:
+            print '\nrhymes (?): {}\n'.format(potential_rhymes)
+
+        self.rhyming_idxs = []
+        self.combined_idxs = []
+        if self.potential_rhymes:
+            self.find_rhyming_idxs()
+        if len(self.rhyming_idxs) > 1:
+            self.combine_idxs()
+
+
+    def __len__(self):
+        return len(self.l_words_only)
+
+
+    def __repr__(self):
+        poems = []
+        if self.print_individual:
+            for rhyme in self.rhyming_idxs:
+                for idxs in rhyme:
+                    poem = self.partition([i+1 for i in idxs])
+                    poems.append(poem)
+        if self.print_combined:
+            for rhyme in self.combined_idxs:
+                for idxs in rhyme:
+                    poem = self.partition([i+1 for i in idxs])
+                    poems.append(poem)
+        str_poem = '\n\n'
+        for p in poems:
+            str_poem += '\n'.join(' '.join(line) for line in p)
+            str_poem += '\n\n'
+        return str_poem
+
+
+    def partition(self, idxs):
+        """Slice word list by given list of indices and return as list of lists"""
+        if not idxs:
+            return [self.l_words_only]
         idxs.sort()
         if idxs[0] == 0:
             idxs = idxs[1:]
-        if idxs[-1] == len(lst):
+        if idxs[-1] == len(self):
             idxs = idxs[:-1]
-        to_slice = zip([0]+idxs, idxs+[len(lst)])
-        return [lst[i:j] for (i,j) in to_slice]
+        to_slice = zip([0]+idxs, idxs+[len(self)])
+        return [ self.l_words_only[i:j] for (i,j) in to_slice ]
 
-    poems = []
 
-    if not potential_rhymes:
-        poems.append([l_words_only])
-        return poems
+    def find_rhyming_idxs(self):
+        for rhyme in self.potential_rhymes:
+            idxd_rhymes = [ (i, self.l_words_only[i]) for i,rhymable
+                            in enumerate(self.l_rhymable) if rhymable == rhyme ]
+            # group rhymable words by word to prevent self-rhyming
+            nonredundant_idxs = [ [word[0] for word in grouped]
+                                for _,grouped in itertools.groupby(
+                                        sorted(idxd_rhymes), key=lambda x: x[1]) ]
+            if len(nonredundant_idxs) > 1:
+                self.rhyming_idxs.append( [idxs for idxs in
+                                           itertools.product(*nonredundant_idxs)] )
 
-    for rhyme in potential_rhymes:
-        idxd_rhymes = [ (i, l_words_only[i]) for i,rhymable in enumerate(l_rhymable)
-                        if rhymable == rhyme ]
-        # eliminate repeating words as rhymes by randomly sampling
-        #nonredundant_idxs = [ random.choice([word[0] for word in grouped])
-                              #for _,grouped in itertools.groupby(
-                                      #sorted(idxd_rhymes), key=lambda x: x[1]) ]
-        # group rhymable words by word to prevent self-rhyming
-        nonredundant_idxs = [ [word[0] for word in grouped]
-                              for _,grouped in itertools.groupby(
-                                      sorted(idxd_rhymes), key=lambda x: x[1]) ]
-        all_combos = itertools.product(*nonredundant_idxs)
 
-        if len(nonredundant_idxs) > 1:
-            for combo in all_combos:
-                poem = partition(l_words_only, [i+1 for i in combo])
-                poems.append(poem)
-
-    return poems
+    def combine_idxs(self):
+        combos = itertools.product(*self.rhyming_idxs)
+        self.combined_idxs += [list(itertools.chain.from_iterable(c) for c in combos)]
 
 
 def n_syllables(text):
@@ -162,43 +194,6 @@ def print_poem(lines):
     print
 
 
-#def text2poem_regex(text, sep=' '):
-    ##text = ('|').join(rhymable_sound(phons) for phons in d_phonemes[word] for word in text.split())
-    #l_words_only = text.translate(None,string.punctuation).upper().split()
-    #rhyme_text = sep.join( rhymable_sound(top_phonemes(word)) for word in l_words_only )
-#
-    #print rhyme_text
-    ## regexes for rhyming patterns
-    ##pattern = re.compile(r'\b(?P<rhyme>\w+)\b.+\b(?P=rhyme)\b')
-    #nongreedy = re.compile(r'(?P<pre>^.*?)\b(?P<rhyme>\w+)\b(?P<between>.+)\b(?P=rhyme)\b(?P<post>.*$)')
-    #greedy = re.compile(r'(?P<pre>^.*)\b(?P<rhyme>\w+)\b(?P<between>.+)\b(?P=rhyme)\b(?P<post>.*$)')
-    #patterns = (nongreedy, greedy)
-#
-    #matches = (re.search(pattern, rhyme_text) for pattern in patterns)
-    #groups = ('pre', 'post', 'between')
-#
-    #poems = []
-#
-    #for match in matches:
-        #d = match.groupdict()
-        ## find indices separating rhyming parts
-        #n_pre, n_post, n_between = ( len(d[k].split()) for k in groups )
-        #rhyme_pair = tuple(l_words_only[i] for i in (n_pre, n_pre+n_between+1))
-        #print "rhyming",rhyme_pair
-        ## filter same-word rhymes
-        #if rhyme_pair[0] == rhyme_pair[1]:
-            #continue
-#
-        #idxs = ((0,n_pre+1), (n_pre+1, n_pre+n_between+2), (n_pre+n_between+2, n_pre+n_between+n_post+2))
-        #lines = tuple( sep.join(l_words_only[i:j]) for (i,j) in idxs )
-        #poems.append(lines)
-#
-    #for poem in set(poems):
-        #print
-        #print '\n'.join(poem)
-        #print
-
-
 def populate_dicts(phonemes_in='./dict_phonemes.pickled',
                    rhymes_in='./dict_rhymes.pickled'):
     global d_phonemes
@@ -218,13 +213,14 @@ if __name__ == "__main__":
     RHYMING_DICT = './dict_rhymes.pickled'
     populate_dicts(PHONEME_DICT, RHYMING_DICT)
     #import code; code.interact(local=locals())
-    poems = text2poems(TEXT, stress_matters=False)#, print_rhymable=True, print_rhymes=True)
 
-    for p in poems:
-        print_poem(p)
+    print Poem(TEXT)
 
-    print '\nBEST!!!~~~~!!!!*****! ......'
-    print_poem( choose_poem(poems) )
+    #for p in poems:
+        #print_poem(p)
+#
+    #print '\nBEST!!!~~~~!!!!*****! ......'
+    #print_poem( choose_poem(poems) )
 
     #poem = choose_poem(poems)
     #print_poem(poem[])
