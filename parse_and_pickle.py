@@ -30,8 +30,8 @@ def find_all_rhymes(indict):
 
 
 if __name__ == "__main__":
-    INFILE = './cmudict-0.7b'
-    OUTFILES = ('./dict_phonemes.pickled', './dict_rhymes.pickled')
+    INFILE = './words/cmudict-0.7b'
+    OUTFILES = ('./words/dict_phonemes.pickled', './words/dict_rhymes.pickled')
 
     d_phonemes = parse_words(INFILE)
     d_rhymes = find_all_rhymes(d_phonemes)

@@ -8,7 +8,7 @@ import numpy as np
 
 
 class rhymingDict():
-    def __init__(self, phonemes_in='./dict_phonemes.pickled'):#, rhymes_in='./dict_rhymes.pickled')
+    def __init__(self, phonemes_in='./words/dict_phonemes.pickled'):#, rhymes_in='./words/dict_rhymes.pickled')
         with open(phonemes_in, 'r') as f:
             self.d_phonemes = pickle.load(f)
 
@@ -226,8 +226,8 @@ TEXT = 'rihanna is going to a movie. tis the season to be groovy.'
 
 if __name__ == "__main__":
     TEXT = sys.argv[1]
-    PHONEME_DICT = './dict_phonemes.pickled'
-    RHYMING_DICT = './dict_rhymes.pickled'
+    PHONEME_DICT = './words/dict_phonemes.pickled'
+    RHYMING_DICT = './words/dict_rhymes.pickled'
     #import code; code.interact(local=locals())
 
     d = rhymingDict(PHONEME_DICT)#, RHYMING_DICT)
