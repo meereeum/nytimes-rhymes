@@ -11,8 +11,16 @@ class rhymingDict():
     def __init__(self, phonemes_in='./dict_phonemes.pickled'):#, rhymes_in='./dict_rhymes.pickled')
         with open(phonemes_in, 'r') as f:
             self.d_phonemes = pickle.load(f)
+
+        # add support for digits
+        nums =  '0123456789'
+        num_txt = ['ZERO','ONE','TWO','THREE','FOUR','FIVE','SIX','SEVEN','EIGHT','NINE']
+        num_phons = [[self.top_phonemes(n)] for n in num_txt]
+        self.d_phonemes.update(itertools.izip(nums,num_phons))
+
         #with open(rhymes_in, 'r') as f:
             #self.d_rhymes = pickle.load(f)
+
 
     def n_pronounciations(self, word):
         """Returns number of specified pronouncations"""
@@ -23,13 +31,16 @@ class rhymingDict():
         """Given word, returns list of rhyming word strings (or empty list if DNE)"""
         try:
             return [ rhyme for pronunciation in self.d_phonemes[word]
-                    for rhyme in self.d_rhymes[rhymable_sound(pronunciation)] if rhyme != word ]
+                    for rhyme in self.d_rhymes[self.rhymable_sound(pronunciation)] if rhyme != word ]
         except(KeyError):
             return []
 
 
     def top_phonemes(self, word):
         """Given word (str), returns list of phonemes in primary pronunciation of word"""
+        # if word is number ending in 1-9, find phonemes for final number
+        if all([char in (str(n) for n in xrange(1,10)) for char in word]):
+            word = word[-1]
         word = word.upper()
         # return original (as single elem of list) if not in dictionary
         return self.d_phonemes.get(word, [[word]])[0]
@@ -57,7 +68,7 @@ class rhymingDict():
         word = word.upper()
         try:
             phonemes = self.d_phonemes[word][0]
-            return len( [p for p in phonemes if is_vowel(p)] )
+            return len( [p for p in phonemes if self.is_vowel(p)] )
         except(IndexError, KeyError):
             # if word not in CMU dict, guess syllables based on # consecutive vowel groups
             # += 1 for trailing `y`
@@ -68,49 +79,52 @@ class rhymingDict():
         #return r'{s}\b{s}'.format(s=sep).join( sep.join(top_phonemes(word)) for word in text.split() )
 
 
-    #def n_syllables(self, word):
-        #"""Return number of syllables (based on # vowel sounds) in first pronounciation of word"""
-        #return len(phon for phon in self.d_phonemes[word][0] if is_vowel(phon))
-
-
-
-def rhymable_sound(phons, accum=[], stresses='12'):
-    """Returns string of rhymable word segment (starting with rightmost vowel phoneme with stress in stresses, if exists) - if no vowel sounds, returns original"""
-    if len(phons) == 1 and not accum:
-        return phons[0]
-    if not phons:
-        if stresses=='12':
-            return rhymable_sound(accum, stresses='0')
+    def rhymable_sound(self, phons, accum=[], stresses='12'):
+        """Returns string of rhymable word segment (starting with rightmost vowel phoneme with stress in stresses, if exists) - if no vowel sounds, returns original"""
+        if len(phons) == 1 and not accum:
+            return phons[0]
+        if not phons:
+            if stresses=='12':
+                return self.rhymable_sound(accum, stresses='0')
+            else:
+                return ''.join(accum)
+        if phons[-1][-1] in stresses: # vowel phoneme with given stress
+            return ''.join(phons[-1:] + accum)
         else:
-            return ''.join(accum)
-    if phons[-1][-1] in stresses: # vowel phoneme with given stress
-        return ''.join(phons[-1:] + accum)
-    else:
-        return rhymable_sound(phons[:-1], accum = (phons[-1:] + accum), stresses=stresses)
+            return self.rhymable_sound(phons[:-1], accum = (phons[-1:] + accum), stresses=stresses)
 
 
-def is_vowel(phoneme):
-    """Returns True if phoneme is a vowel sounds, else False"""
-    return phoneme[-1] in '012'
+    def is_vowel(self, phoneme):
+        """Returns True if phoneme is a vowel sounds, else False"""
+        return (phoneme[-1] in '012') and (phoneme[0] not in '0123456789')
 
 
 
 
 class Poem():
-    def __init__(self, text, d_phonemes, print_rhymable=False, print_rhymes=False,
-                 stress_matters=True, print_individual=False, print_combined=True):
+    def __init__(self, text, d_phonemes, stress_matters=True, ignore_plural=True,
+                 print_rhymable=False, print_rhymes=False, print_individual=False, print_combined=True):
         self.d_phonemes = d_phonemes
         self.print_individual = print_individual
         self.print_combined = print_combined
+
+        self.l_words = text.split()
         self.l_words_only = text.translate(None,string.punctuation).upper().split()
 
+        # process rhymable text according to options
         if stress_matters:
-            self.l_rhymable = [ rhymable_sound(d.top_phonemes(word))
+            self.l_rhymable = [ d_phonemes.rhymable_sound(d.top_phonemes(word))
                                 for word in self.l_words_only ]
         else:
-            self.l_rhymable = [ ''.join(char for char in rhymable_sound(d.top_phonemes(word))
+            self.l_rhymable = [ ''.join(char for char in d_phonemes.rhymable_sound(d.top_phonemes(word))
                                 if char not in '012') for word in self.l_words_only ]
+        if ignore_plural:
+            self.l_rhymable = [ word[:-1] if word[-1] in 'ZS' else word for word in self.l_rhymable ]
 
+        print self.l_rhymable
+
+
+        # find rhymes
         self.potential_rhymes = [ k for k,v in Counter(self.l_rhymable).iteritems() if v>1 ]
 
         if print_rhymable:
@@ -132,6 +146,9 @@ class Poem():
 
     def __repr__(self):
         poems = []
+        # if one rhyme only, print single rhyme regardless of optional bool
+        if not self.combined_idxs:
+            self.print_individual = True
         if self.print_individual:
             for rhyme in self.rhyming_idxs:
                 for idxs in rhyme:
@@ -152,17 +169,19 @@ class Poem():
     def partition(self, idxs):
         """Slice word list by given list of indices and return as list of lists"""
         if not idxs:
-            return [self.l_words_only]
+            return [self.l_words]
         idxs.sort()
         if idxs[0] == 0:
             idxs = idxs[1:]
         if idxs[-1] == len(self):
             idxs = idxs[:-1]
         to_slice = zip([0]+idxs, idxs+[len(self)])
-        return [ self.l_words_only[i:j] for (i,j) in to_slice ]
+        return [ self.l_words[i:j] for (i,j) in to_slice ]
 
 
     def find_rhyming_idxs(self):
+        """Identify indices corresponding to true rhymes (non-self) among
+        potential rhymes"""
         for rhyme in self.potential_rhymes:
             idxd_rhymes = [ (i, self.l_words_only[i]) for i,rhymable
                             in enumerate(self.l_rhymable) if rhymable == rhyme ]
@@ -171,11 +190,13 @@ class Poem():
                                 for _,grouped in itertools.groupby(
                                         sorted(idxd_rhymes), key=lambda x: x[1]) ]
             if len(nonredundant_idxs) > 1:
+                # list of lists
                 self.rhyming_idxs.append( [idxs for idxs in
                                            itertools.product(*nonredundant_idxs)] )
 
 
     def combine_idxs(self):
+        """"""
         combos = itertools.product(*self.rhyming_idxs)
         self.combined_idxs += [list(itertools.chain.from_iterable(c) for c in combos)]
 
@@ -199,13 +220,6 @@ def choose_poem(lst):
     return lst[best_idx]
 
 
-def print_poem(lines):
-    print
-    print '\n'.join(' '.join(line) for line in lines)
-    print
-
-
-
 
 TEXT = 'rihanna is going to a movie. tis the season to be groovy.'
 # USAGE: $ cat scratch.txt | tr '\n' ' ' | sed -e's/^/"/' -e's/$/"/' | xargs python rhyming.py | gsed -re 's/([^^])$/\1!/' | say -v Vicki
@@ -220,13 +234,6 @@ if __name__ == "__main__":
 
     print Poem(TEXT, d_phonemes=d, print_rhymable=True, print_rhymes=True)
 
-    #for p in poems:
-        #print_poem(p)
-#
+
     #print '\nBEST!!!~~~~!!!!*****! ......'
     #print_poem( choose_poem(poems) )
-
-    #poem = choose_poem(poems)
-    #print_poem(poem[])
-
-    #import code; code.interact(local=locals())
