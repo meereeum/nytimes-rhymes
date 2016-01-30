@@ -1,9 +1,9 @@
 from collections import defaultdict
 import cPickle as pickle
-from rhyming import rhymable_sound
+from rhyming import rhymableSound
 
 
-def parse_words(file_in):
+def parseWords(file_in):
     """Parse CMUdict into dictionary of (string, list of lists) items
     Key: word
     Value: [ [phonemes for pronounciation 0], [phonemes for pronounciation 1], ... ]"""
@@ -19,13 +19,13 @@ def parse_words(file_in):
     return d_phonemes
 
 
-def find_all_rhymes(indict):
+def findAllRhymes(indict):
     """Given dictionary of phonemes, returns dictionary of
     { 'rhymable sound': ['word1', 'word2', ...] }"""
     d_rhymes = defaultdict(list)
     for k,vs in indict.iteritems():
         for v in vs:
-            d_rhymes[rhymable_sound(v)].append(k)
+            d_rhymes[rhymableSound(v)].append(k)
     return { k: v for k,v in d_rhymes.iteritems() if len(v) > 1 }
 
 
@@ -33,8 +33,8 @@ if __name__ == "__main__":
     INFILE = './words/cmudict-0.7b'
     OUTFILES = ('./words/dict_phonemes.pickled', './words/dict_rhymes.pickled')
 
-    d_phonemes = parse_words(INFILE)
-    d_rhymes = find_all_rhymes(d_phonemes)
+    d_phonemes = parseWords(INFILE)
+    d_rhymes = findAllRhymes(d_phonemes)
 
     for file_out, d in zip(OUTFILES, (d_phonemes, d_rhymes)):
         with open(file_out, 'w') as f:
